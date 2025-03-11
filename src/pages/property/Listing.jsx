@@ -42,7 +42,7 @@ const Listing = () => {
 
   const authState = useSelector((state) => state.auth);
   const [noPropertiesFound, setNoPropertiesFound] = useState(false);
-  const [selectedLocality, setSelectedLocality] = useState("");
+  const [selectedLocality, setSelectedLocality] = useState([]);
   const [selectedArea, setSelectedArea] = useState([]);
   const [moreArea, setMoreArea] = useState(false);
   // const [selectedCity, setSelectedCity] = useState("");
@@ -224,6 +224,7 @@ const Listing = () => {
     setLoading(true);
 
     try {
+      console.log(typeof(selectedLocality))
       let cleanedFilters = {
         ...filters,
         bhk: filters.bhk.map((bhk) => bhk.replace(/[^0-9]/g, "")),
@@ -261,37 +262,30 @@ const Listing = () => {
           queryString =
             queryString +
             `&area=${selectedArea.map(encodeURIComponent).join(",")}`;
-        } else if (selectedLocality) {
+        } 
+        if (selectedLocality.length > 0) {   
+          console.log("checking",selectedLocality,queryString)
           queryString =
-            queryString + `&locality=${encodeURIComponent(selectedLocality)}`;
+            queryString + `&locality=${selectedLocality.map(encodeURIComponent).join(",")}`;
+          console.log("final_query",queryString)
         }
       }
 
       queryString = queryString + `&page=${currentPage}`;
 
       const url = `${BASE_URL}property/filter?${queryString}`;
-      // console.log("Request URL:", url); // Log the constructed URL
+      console.log("Request URL:", url); // Log the constructed URL
 
       try {
+        console.log("sending url:",url)
         const response = await axios.get(url);
         let propertyData = response.data.data; // Store the response data
-        // console.log(propertyData);
+        console.log("backend sent")
+        console.log(propertyData);
 
         // If no data is found for the area, fall back to the locality
-        if (
-          propertyData.length === 0 &&
-          selectedArea.length > 0 &&
-          selectedLocality
-        ) {
-          queryString = queryString.replace(
-            /&area=[^&]*/,
-            `&locality=${encodeURIComponent(selectedLocality)}`
-          );
-          const fallbackUrl = `${BASE_URL}property/filter?${queryString}`;
-          // console.log("Fallback Request URL:", fallbackUrl); // Log the fallback URL
-          const fallbackResponse = await axios.get(fallbackUrl);
-          propertyData = fallbackResponse.data.data;
-        }
+        
+        
 
         // Sort by created date if needed
         if (propertyData && Array.isArray(propertyData)) {
@@ -325,15 +319,17 @@ const Listing = () => {
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
+    console.log("inside params",params)
     const cityParam = params.get("city");
     const areaParam = params.get("area") ? params.get("area").split(",") : [];
-    const localityParam = params.get("locality");
+    const localityParam = params.get("locality") ? params.get("locality").split(",") : [];
+    console.log(localityParam)
 
     setCurrentPage(1);
     fetchAndFilterProperties(
       cityParam || city,
       areaParam.length > 0 ? areaParam : [],
-      localityParam || ""
+      localityParam.length > 0 ? localityParam : []
     );
   }, [city, location.search]); // Add city to the dependency array
 
@@ -341,12 +337,13 @@ const Listing = () => {
     const params = new URLSearchParams(location.search);
     const cityParam = params.get("city");
     const areaParam = params.get("area") ? params.get("area").split(",") : [];
-    const localityParam = params.get("locality");
+    const localityParam = params.get("locality") ?  params.get("locality").split(",") : [];
+    console.log("2nd",localityParam)
 
     fetchAndFilterProperties(
       cityParam || city,
       areaParam.length > 0 ? areaParam : [],
-      localityParam || ""
+      localityParam.length > 0 ? localityParam : []
     );
   }, [currentPage]);
 
@@ -380,7 +377,16 @@ const Listing = () => {
   };
 
   const handleLocalitySelect = (locality) => {
-    setSelectedLocality(locality); // Update selected locality
+    setSelectedLocality((prevSelected) => {
+      // Check if the locality is already selected
+      if (prevSelected.includes(locality)) {
+        // If already selected, remove it
+        return prevSelected.filter((item) => item !== locality);
+      } else {
+        // If not selected, add it
+        return [...prevSelected, locality];
+      }
+    });
   };
 
   // Add this function to handle search
@@ -413,36 +419,66 @@ const Listing = () => {
   };
   const handleSearchSelection = (value, type) => {
     const queryParams = new URLSearchParams(location.search);
-
+  
     if (type === "locality") {
-      handleLocalitySelect(value);
-      queryParams.set("locality", value);
+      // Toggle the selected locality
+      setSelectedLocality((prevSelected) => {
+        const updatedLocalities = prevSelected.includes(value)
+          ? prevSelected.filter((item) => item !== value) // Remove if already selected
+          : [...prevSelected, value]; // Add if not selected
+  
+        if (updatedLocalities.length > 0) {
+          queryParams.set("locality", updatedLocalities.join(",")); // Store as comma-separated values
+        } else {
+          queryParams.delete("locality"); // Remove if empty
+        }
+  
+        // Update the URL with new locality selections
+        navigate(`${location.pathname}?${queryParams.toString()}`);
+  
+        // Trigger fetchAndFilterProperties with updated params
+        fetchAndFilterProperties(
+          city,
+          queryParams.get("area") ? queryParams.get("area").split(",") : [],
+          updatedLocalities
+        );
+  
+        return updatedLocalities;
+      });
     } else {
-      addLocality(value);
-      const currentAreas = selectedArea.includes(value)
-        ? selectedArea.filter((area) => area !== value)
-        : [...selectedArea, value];
-
-      if (currentAreas.length > 0) {
-        queryParams.set("area", currentAreas.join(","));
+      // Handle area selection
+      const updatedAreas = selectedArea.includes(value)
+        ? selectedArea.filter((area) => area !== value) // Remove if already selected
+        : [...selectedArea, value]; // Add if not selected
+  
+      setSelectedArea(updatedAreas);
+      console.log("ha aite enti")
+      console.log(updatedAreas)
+      console.log(selectedArea)
+      setSelectedArea(updatedAreas)
+  
+      if (updatedAreas.length > 0) {
+        queryParams.set("area", updatedAreas.join(",")); // Store as comma-separated values
       } else {
-        queryParams.delete("area");
+        queryParams.delete("area"); // Remove if empty
       }
+  
+      // Update the URL with new area selections
+      navigate(`${location.pathname}?${queryParams.toString()}`);
+  
+      // Trigger fetchAndFilterProperties with updated params
+      fetchAndFilterProperties(
+        city,
+        updatedAreas,
+        queryParams.get("locality") ? queryParams.get("locality").split(",") : []
+      );
     }
-
+  
     setSearchQuery("");
     setShowSearchPanel(false);
-
-    // Update the URL with the new search parameter
-    navigate(`${location.pathname}?${queryParams.toString()}`);
-
-    // Trigger fetchAndFilterProperties with the selected city and new search parameter
-    fetchAndFilterProperties(
-      city,
-      queryParams.get("area") ? queryParams.get("area").split(",") : [],
-      queryParams.get("locality") || ""
-    );
   };
+  
+  // Loading state handling
   if (loading) {
     return (
       <div className="flex justify-center items-center h-screen">
@@ -450,6 +486,7 @@ const Listing = () => {
       </div>
     );
   }
+  
   const handleAddPropertybtn = () => {
     if (authState.status === true && localStorage.getItem("token")) {
       navigate("/landlord-dashboard", { state: { content: "AddProperty" } });
@@ -533,26 +570,37 @@ const Listing = () => {
                 <div className="flex-1 min-w-0 flex items-center gap-2 px-4 my-1 text-sm md:text-lg">
                   <FaSearch className="text-black shrink-0" />
                   <div className="flex flex-wrap items-center gap-1 py-2 w-full overflow-x-hidden">
-                    {selectedLocality && (
-                      <div className="flex items-center gap-1 bg-[#EED98B] px-2 py-1 rounded-full shrink-0">
-                        <span className="text-sm">{selectedLocality}</span>
+                  {selectedLocality.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-2 py-2 w-full overflow-x-hidden">
+                    {selectedLocality.map((locality, index) => (
+                      <div
+                        key={index}
+                        className="flex items-center gap-1 bg-[#EED98B] px-2 py-1 rounded-full shrink-0"
+                      >
+                        <span className="text-sm">{locality}</span>
                         <svg
                           xmlns="http://www.w3.org/2000/svg"
                           className="h-4 w-4 cursor-pointer"
                           onClick={() => {
-                            setSelectedLocality("");
+                            // Remove the clicked locality
+                            const updatedLocalities = selectedLocality.filter(
+                              (item) => item !== locality
+                            );
+                            setSelectedLocality(updatedLocalities);
 
                             // Update the URL parameters
-                            const queryParams = new URLSearchParams(
-                              location.search
-                            );
+                            const queryParams = new URLSearchParams(location.search);
                             queryParams.delete("locality");
-                            navigate(
-                              `${location.pathname}?${queryParams.toString()}`
-                            );
+
+                            // If there are remaining selected localities, add them back to the URL
+                            if (updatedLocalities.length > 0) {
+                              queryParams.append("locality", updatedLocalities.join(","));
+                            }
+
+                            navigate(`${location.pathname}?${queryParams.toString()}`);
 
                             // Trigger fetchAndFilterProperties with the updated parameters
-                            fetchAndFilterProperties(city, selectedArea);
+                            fetchAndFilterProperties(city, selectedArea, updatedLocalities);
                           }}
                           viewBox="0 0 20 20"
                           fill="currentColor"
@@ -564,7 +612,10 @@ const Listing = () => {
                           />
                         </svg>
                       </div>
-                    )}
+                    ))}
+                  </div>
+)}
+
                     {selectedArea.map((area) => (
                       <div
                         key={area}
